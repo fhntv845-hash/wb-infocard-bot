@@ -3,96 +3,110 @@ import os
 from io import BytesIO
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, FSInputFile
+from aiogram.enums import ParseMode
+from aiogram.filters import CommandStart
+from aiogram.types import Message, BufferedInputFile
 from dotenv import load_dotenv
+
 from PIL import Image, ImageDraw, ImageFont
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN")
 
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 
-def font(size, bold=False):
-    paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "C:/Windows/Fonts/arial.ttf",
-    ]
-
-    for path in paths:
-        try:
-            return ImageFont.truetype(path, size)
-        except:
-            pass
-
-    return ImageFont.load_default()
-
-
-@dp.message(F.text == "/start")
-async def start_handler(message: Message):
+@dp.message(CommandStart())
+async def start(message: Message):
     await message.answer(
         "🔥 WB Infocard AI Bot\n\n"
-        "Отправь фото товара с подписью — я создам инфокарточку WB 900×1200 PNG."
+        "Отправь фото товара с подписью — я создам инфокарточку WB 900x1200 PNG"
     )
 
 
-@dp.message(F.photo | F.document)
-async def handle_photo(message: Message):
-    await message.answer("🖼 Создаю инфокарточку...")
+@dp.message(F.photo)
+async def create_infocard(message: Message):
 
-    if message.photo:
-        file_id = message.photo[-1].file_id
-    else:
-        file_id = message.document.file_id
+    caption = message.caption or "Товар Wildberries"
 
-    file = await bot.get_file(file_id)
-    downloaded_file = await bot.download_file(file.file_path)
+    photo = message.photo[-1]
 
-    image = Image.open(downloaded_file).convert("RGB")
-    image = image.resize((900, 1200))
+    file = await bot.get_file(photo.file_id)
 
-    draw = ImageDraw.Draw(image)
+    file_bytes = await bot.download_file(file.file_path)
 
-    title_font = font(48, True)
-    text_font = font(32, True)
+    product_image = Image.open(file_bytes).convert("RGBA")
 
-    title = "ИНФОКАРТОЧКА WB"
-    product_text = message.caption or "Товар для Wildberries"
+    canvas = Image.new("RGB", (900, 1200), "white")
+
+    draw = ImageDraw.Draw(canvas)
+
+    try:
+        font_title = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            44
+        )
+
+        font_text = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            30
+        )
+
+    except:
+        font_title = ImageFont.load_default()
+        font_text = ImageFont.load_default()
 
     draw.rounded_rectangle(
-        (30, 30, 870, 170),
+        (40, 40, 860, 170),
         radius=40,
-        fill=(10, 20, 35)
+        fill=(8, 22, 45)
     )
 
     draw.text(
-        (60, 75),
-        title,
-        font=title_font,
+        (70, 75),
+        "WB INFOCARD",
+        font=font_title,
         fill="white"
     )
 
+    product_image.thumbnail((650, 650))
+
+    px = (900 - product_image.width) // 2
+    py = 230
+
+    canvas.paste(product_image, (px, py), product_image)
+
     draw.rounded_rectangle(
-        (40, 980, 860, 1140),
-        radius=30,
+        (50, 930, 850, 1090),
+        radius=35,
         fill=(240, 240, 240)
     )
 
+    text = caption[:120]
+
     draw.text(
-        (70, 1030),
-        product_text[:90],
-        font=text_font,
-        fill="black"
+        (80, 980),
+        text,
+        font=font_text,
+        fill=(20, 20, 20)
     )
 
-    output_path = "wb_infocard.png"
-    image.save(output_path)
+    output = BytesIO()
 
-    await message.answer_document(
-        FSInputFile(output_path),
-        caption="✅ Готово: инфокарточка WB 900×1200 PNG"
+    canvas.save(output, format="PNG")
+
+    output.seek(0)
+
+    image = BufferedInputFile(
+        output.read(),
+        filename="wb_infocard.png"
+    )
+
+    await message.answer_photo(
+        image,
+        caption="✅ Готово: инфокарточка WB 900x1200 PNG"
     )
 
 
